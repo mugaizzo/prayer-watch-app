@@ -80,6 +80,32 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         )
     }
 
+    /** Triggered by pull-to-refresh: re-fetch and sync using current saved settings. */
+    fun refreshPrayerTimes() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isSyncing = true, syncError = null, syncSuccess = false)
+            val settings = repository.getSettings()
+            val result = repository.getPrayerTimes(settings, forceRefresh = true)
+            result.fold(
+                onSuccess = {
+                    enqueueImmediateSync()
+                    repository.setLastSyncTime()
+                    _uiState.value = _uiState.value.copy(
+                        isSyncing = false,
+                        syncSuccess = true,
+                        lastSyncTime = formatTime(System.currentTimeMillis())
+                    )
+                },
+                onFailure = { e ->
+                    _uiState.value = _uiState.value.copy(
+                        isSyncing = false,
+                        syncError = e.localizedMessage ?: "Refresh failed"
+                    )
+                }
+            )
+        }
+    }
+
     /** Save settings and immediately trigger a sync to the watch. */
     fun saveAndSync() {
         viewModelScope.launch {

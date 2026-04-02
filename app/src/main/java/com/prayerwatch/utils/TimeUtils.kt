@@ -1,21 +1,19 @@
 package com.prayerwatch.utils
 
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 object TimeUtils {
 
-    private val dateFormat: ThreadLocal<SimpleDateFormat> = ThreadLocal.withInitial {
-        SimpleDateFormat("dd-MM-yyyy", Locale.US)
-    }
-    private val timeFormat: ThreadLocal<SimpleDateFormat> = ThreadLocal.withInitial {
-        SimpleDateFormat("HH:mm", Locale.US)
-    }
+    private val dateFormatter = DateTimeFormatter.ofPattern("dd-MM-yyyy", Locale.US)
+    private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm", Locale.US)
+    private val displayTimeFormatter = DateTimeFormatter.ofPattern("h:mm a", Locale.US)
 
     /** Return today's date as "DD-MM-YYYY" string for the API */
-    fun getTodayDateString(): String = dateFormat.get()!!.format(Date())
+    fun getTodayDateString(): String = LocalDate.now().format(dateFormatter)
 
     /**
      * Convert a time string like "04:32 (BST)" to milliseconds since midnight today.
@@ -23,21 +21,20 @@ object TimeUtils {
      */
     fun timeStringToMillis(timeStr: String): Long {
         val cleanedTime = cleanTime(timeStr)
-        val parts = cleanedTime.split(":")
-        if (parts.size < 2) return 0L
-
-        val cal = Calendar.getInstance()
-        cal.set(Calendar.HOUR_OF_DAY, parts[0].trim().toIntOrNull() ?: 0)
-        cal.set(Calendar.MINUTE, parts[1].trim().toIntOrNull() ?: 0)
-        cal.set(Calendar.SECOND, 0)
-        cal.set(Calendar.MILLISECOND, 0)
-        return cal.timeInMillis
+        return try {
+            val localTime = LocalTime.parse(cleanedTime, timeFormatter)
+            LocalDate.now()
+                .atTime(localTime)
+                .atZone(ZoneId.systemDefault())
+                .toInstant()
+                .toEpochMilli()
+        } catch (e: Exception) {
+            0L
+        }
     }
 
     /** Strip parenthetical timezone suffixes e.g. "04:32 (BST)" -> "04:32" */
-    fun cleanTime(timeStr: String): String {
-        return timeStr.substringBefore("(").trim()
-    }
+    fun cleanTime(timeStr: String): String = timeStr.substringBefore("(").trim()
 
     /**
      * Given a list of prayer times in milliseconds (already converted),
@@ -76,9 +73,7 @@ object TimeUtils {
      */
     fun to12HourFormat(timeStr: String): String {
         return try {
-            val parsed = timeFormat.get()!!.parse(timeStr) ?: return timeStr
-            val displayFormat = SimpleDateFormat("h:mm a", Locale.US)
-            displayFormat.format(parsed)
+            LocalTime.parse(timeStr, timeFormatter).format(displayTimeFormatter)
         } catch (e: Exception) {
             timeStr
         }
@@ -87,5 +82,5 @@ object TimeUtils {
     /**
      * Get current time as "HH:mm"
      */
-    fun getCurrentTimeString(): String = timeFormat.get()!!.format(Date())
+    fun getCurrentTimeString(): String = LocalTime.now().format(timeFormatter)
 }

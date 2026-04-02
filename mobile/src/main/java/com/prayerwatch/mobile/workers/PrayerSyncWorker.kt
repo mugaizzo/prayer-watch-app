@@ -68,20 +68,31 @@ class PrayerSyncWorker(
     }
 
     /**
-     * Build a JSON string matching the watch module's DailyPrayerTimes + PrayerTime model
-     * so the WearListenerService can deserialize it directly.
+     * Build a JSON string matching the watch module's DailyPrayerTimes + PrayerTime model.
+     * timeInMillis is computed from the HH:mm time strings so the watch countdown works correctly.
      */
     private fun buildWatchTimesJson(times: DailyPrayerTimes): String {
-        return """
-        {
-          "fajr":    {"name":"Fajr",    "time":"${times.fajr}",    "timeInMillis": 0},
-          "dhuhr":   {"name":"Dhuhr",   "time":"${times.dhuhr}",   "timeInMillis": 0},
-          "asr":     {"name":"Asr",     "time":"${times.asr}",     "timeInMillis": 0},
-          "maghrib": {"name":"Maghrib", "time":"${times.maghrib}", "timeInMillis": 0},
-          "isha":    {"name":"Isha",    "time":"${times.isha}",    "timeInMillis": 0},
-          "date":    "${times.date}"
+        fun timeToMillis(timeStr: String): Long {
+            return try {
+                val parts = timeStr.split(":")
+                if (parts.size < 2) return 0L
+                val cal = java.util.Calendar.getInstance()
+                cal.set(java.util.Calendar.HOUR_OF_DAY, parts[0].trim().toInt())
+                cal.set(java.util.Calendar.MINUTE, parts[1].trim().toInt())
+                cal.set(java.util.Calendar.SECOND, 0)
+                cal.set(java.util.Calendar.MILLISECOND, 0)
+                cal.timeInMillis
+            } catch (e: Exception) { 0L }
         }
-        """.trimIndent()
+
+        return gson.toJson(mapOf(
+            "fajr"    to mapOf("name" to "Fajr",    "time" to times.fajr,    "timeInMillis" to timeToMillis(times.fajr)),
+            "dhuhr"   to mapOf("name" to "Dhuhr",   "time" to times.dhuhr,   "timeInMillis" to timeToMillis(times.dhuhr)),
+            "asr"     to mapOf("name" to "Asr",      "time" to times.asr,     "timeInMillis" to timeToMillis(times.asr)),
+            "maghrib" to mapOf("name" to "Maghrib",  "time" to times.maghrib, "timeInMillis" to timeToMillis(times.maghrib)),
+            "isha"    to mapOf("name" to "Isha",     "time" to times.isha,    "timeInMillis" to timeToMillis(times.isha)),
+            "date"    to times.date
+        ))
     }
 
     companion object {
