@@ -1,0 +1,14 @@
+<resources>
+    <string name="app_name">Prayer Watch</string>
+    <string name="next_prayer">Next Prayer</string>
+    <string name="loading">Loading prayer times…</string>
+    <string name="error_location">Location access needed for prayer times</string>
+    <string name="prayer_fajr">Fajr</string>
+    <string name="prayer_dhuhr">Dhuhr</string>
+    <string name="prayer_asr">Asr</string>
+    <string name="prayer_maghrib">Maghrib</string>
+    <string name="prayer_isha">Isha</string>
+    <string name="countdown_label">Time until next prayer</string>
+    <string name="all_prayer_times">Prayer Times</string>
+    <string name="swipe_hint">Swipe for all times</string>
+</resources>
