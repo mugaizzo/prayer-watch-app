@@ -6,8 +6,8 @@ import androidx.work.WorkerParameters
 import com.prayerwatch.data.repository.PrayerRepository
 
 /**
- * Background worker that refreshes prayer times daily.
- * Scheduled by WorkManager to run once per day.
+ * Background worker that refreshes prayer times once per day.
+ * Scheduled by WorkManager in MainViewModel.
  */
 class PrayerTimeUpdateWorker(
     appContext: Context,
@@ -16,17 +16,10 @@ class PrayerTimeUpdateWorker(
 
     override suspend fun doWork(): Result {
         val repository = PrayerRepository(applicationContext)
-
-        val location = repository.getCachedLocation() ?: return Result.success()
-        val method = repository.getSavedMethod()
+        if (!repository.isConfigured()) return Result.success() // nothing to refresh yet
 
         return try {
-            val result = repository.getPrayerTimes(
-                latitude = location.first,
-                longitude = location.second,
-                method = method,
-                forceRefresh = true
-            )
+            val result = repository.getPrayerTimes(forceRefresh = true)
             if (result.isSuccess) Result.success() else Result.retry()
         } catch (e: Exception) {
             Result.retry()

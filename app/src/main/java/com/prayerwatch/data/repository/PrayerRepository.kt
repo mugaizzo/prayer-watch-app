@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.google.gson.Gson
 import com.prayerwatch.data.api.AladhanApi
+import com.prayerwatch.data.model.ApiSettings
 import com.prayerwatch.domain.model.DailyPrayerTimes
 import com.prayerwatch.domain.model.PrayerTime
 import com.prayerwatch.utils.TimeUtils
@@ -21,6 +22,7 @@ class PrayerRepository(private val context: Context) {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     private val gson = Gson()
+
     private val api: AladhanApi by lazy {
         val logging = HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BASIC
@@ -40,31 +42,31 @@ class PrayerRepository(private val context: Context) {
     }
 
     /**
-     * Fetch today's prayer times from the Aladhan API.
-     * Results are cached in SharedPreferences.
+     * Fetch today's prayer times from the Aladhan API (timingsByCity).
+     * Results are cached in SharedPreferences keyed by date.
+     *
+     * @param settings   API parameters (city, country, method, etc.)
+     * @param forceRefresh  Skip cache and always call the network
      */
     suspend fun getPrayerTimes(
-        latitude: Double,
-        longitude: Double,
-        method: Int = AladhanApi.METHOD_ISNA,
+        settings: ApiSettings = getSavedSettings(),
         forceRefresh: Boolean = false
     ): Result<DailyPrayerTimes> = withContext(Dispatchers.IO) {
         val today = TimeUtils.getTodayDateString()
 
-        // Return cached data if available and not stale
         if (!forceRefresh) {
             val cached = getCachedPrayerTimes(today)
-            if (cached != null) {
-                return@withContext Result.success(cached)
-            }
+            if (cached != null) return@withContext Result.success(cached)
         }
 
         try {
             val response = api.getPrayerTimes(
                 date = today,
-                latitude = latitude,
-                longitude = longitude,
-                method = method
+                city = settings.city,
+                country = settings.country,
+                method = settings.method,
+                methodSettings = settings.methodSettingsOrNull(),
+                school = settings.school
             )
 
             if (response.code == 200 && response.data != null) {
@@ -100,27 +102,22 @@ class PrayerRepository(private val context: Context) {
                     date = dateStr
                 )
 
-                // Cache the result
                 cachePrayerTimes(today, dailyTimes)
                 Result.success(dailyTimes)
             } else {
                 Result.failure(Exception("API error: ${response.status}"))
             }
         } catch (e: Exception) {
-            // Try to return cached data even if stale on error
-            val stale = getCachedPrayerTimes(null)
-            if (stale != null) {
-                Result.success(stale)
-            } else {
-                Result.failure(e)
-            }
+            // Return stale cache rather than nothing on network failure
+            val stale = getCachedPrayerTimes(dateKey = null)
+            if (stale != null) Result.success(stale) else Result.failure(e)
         }
     }
 
-    private fun getCachedPrayerTimes(dateKey: String?): DailyPrayerTimes? {
+    /** Return today's cached prayer times (null if not available or stale). */
+    fun getCachedPrayerTimes(dateKey: String? = TimeUtils.getTodayDateString()): DailyPrayerTimes? {
         val cachedDate = prefs.getString(KEY_CACHED_DATE, null) ?: return null
         if (dateKey != null && cachedDate != dateKey) return null
-
         val json = prefs.getString(KEY_CACHED_TIMES, null) ?: return null
         return try {
             gson.fromJson(json, DailyPrayerTimes::class.java)
@@ -136,36 +133,30 @@ class PrayerRepository(private val context: Context) {
             .apply()
     }
 
-    /** Save last known location */
-    fun saveLocation(latitude: Double, longitude: Double) {
+    /** Persist all API settings. */
+    fun saveSettings(settings: ApiSettings) {
         prefs.edit()
-            .putFloat(KEY_LAT, latitude.toFloat())
-            .putFloat(KEY_LNG, longitude.toFloat())
+            .putString(KEY_SETTINGS, gson.toJson(settings))
             .apply()
     }
 
-    /** Retrieve cached location, or null if not available */
-    fun getCachedLocation(): Pair<Double, Double>? {
-        if (!prefs.contains(KEY_LAT) || !prefs.contains(KEY_LNG)) return null
-        val lat = prefs.getFloat(KEY_LAT, 0f).toDouble()
-        val lng = prefs.getFloat(KEY_LNG, 0f).toDouble()
-        return Pair(lat, lng)
+    /** Retrieve saved API settings (defaults if none stored yet). */
+    fun getSavedSettings(): ApiSettings {
+        val json = prefs.getString(KEY_SETTINGS, null) ?: return ApiSettings()
+        return try {
+            gson.fromJson(json, ApiSettings::class.java) ?: ApiSettings()
+        } catch (e: Exception) {
+            ApiSettings()
+        }
     }
 
-    /** Save user's preferred calculation method */
-    fun saveMethod(method: Int) {
-        prefs.edit().putInt(KEY_METHOD, method).apply()
-    }
-
-    /** Retrieve user's preferred calculation method */
-    fun getSavedMethod(): Int = prefs.getInt(KEY_METHOD, AladhanApi.METHOD_ISNA)
+    /** True if settings have been configured (city is not the default empty placeholder). */
+    fun isConfigured(): Boolean = prefs.contains(KEY_SETTINGS)
 
     companion object {
-        private const val PREFS_NAME = "prayer_watch_prefs"
+        const val PREFS_NAME = "prayer_watch_prefs"
         private const val KEY_CACHED_DATE = "cached_date"
         private const val KEY_CACHED_TIMES = "cached_times"
-        private const val KEY_LAT = "latitude"
-        private const val KEY_LNG = "longitude"
-        private const val KEY_METHOD = "calculation_method"
+        const val KEY_SETTINGS = "api_settings"
     }
 }

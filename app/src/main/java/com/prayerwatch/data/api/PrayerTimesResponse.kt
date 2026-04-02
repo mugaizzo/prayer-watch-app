@@ -58,8 +58,8 @@ data class HijriMonthInfo(
 )
 
 data class MetaInfo(
-    @SerializedName("latitude") val latitude: Double,
-    @SerializedName("longitude") val longitude: Double,
+    @SerializedName("latitude") val latitude: Double?,
+    @SerializedName("longitude") val longitude: Double?,
     @SerializedName("timezone") val timezone: String,
     @SerializedName("method") val method: CalculationMethod?
 )

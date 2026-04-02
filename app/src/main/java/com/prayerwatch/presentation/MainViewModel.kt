@@ -1,6 +1,5 @@
 package com.prayerwatch.presentation
 
-import android.annotation.SuppressLint
 import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
@@ -8,8 +7,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
-import com.google.android.gms.location.LocationServices
-import com.google.android.gms.location.Priority
+import com.prayerwatch.data.model.ApiSettings
 import com.prayerwatch.data.repository.PrayerRepository
 import com.prayerwatch.domain.model.DailyPrayerTimes
 import com.prayerwatch.domain.model.PrayerTime
@@ -30,10 +28,11 @@ sealed class PrayerUiState {
         val nextPrayer: PrayerTime?,
         val nextPrayerIndex: Int,
         val countdown: String,
-        val currentTime: String
+        val currentTime: String,
+        val settings: ApiSettings
     ) : PrayerUiState()
     data class Error(val message: String) : PrayerUiState()
-    object LocationPermissionRequired : PrayerUiState()
+    object NotConfigured : PrayerUiState()
 }
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -47,93 +46,54 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         scheduleBackgroundWork()
+        loadPrayerTimes()
     }
 
-    /** Called when location permission is granted */
-    @SuppressLint("MissingPermission")
     fun loadPrayerTimes() {
         viewModelScope.launch {
             _uiState.value = PrayerUiState.Loading
 
-            // Check for cached location first for faster startup
-            val cachedLocation = repository.getCachedLocation()
-            if (cachedLocation != null) {
-                fetchAndUpdateTimes(cachedLocation.first, cachedLocation.second)
+            if (!repository.isConfigured()) {
+                _uiState.value = PrayerUiState.NotConfigured
+                return@launch
             }
 
-            // Then try to get the current location
-            try {
-                fusedLocationClient.getCurrentLocation(
-                    Priority.PRIORITY_BALANCED_POWER_ACCURACY,
-                    null
-                ).addOnSuccessListener { location ->
-                    if (location != null) {
-                        repository.saveLocation(location.latitude, location.longitude)
-                        viewModelScope.launch {
-                            fetchAndUpdateTimes(location.latitude, location.longitude)
-                        }
-                    } else if (cachedLocation == null) {
-                        _uiState.value = PrayerUiState.Error("Unable to determine location.")
-                    }
-                }.addOnFailureListener { e ->
-                    if (cachedLocation == null) {
-                        _uiState.value = PrayerUiState.Error(
-                            "Location error: ${e.localizedMessage}"
-                        )
-                    }
-                }
-            } catch (e: SecurityException) {
-                _uiState.value = PrayerUiState.LocationPermissionRequired
-            }
-        }
-    }
+            val settings = repository.getSavedSettings()
+            val result = repository.getPrayerTimes(settings)
 
-    private suspend fun fetchAndUpdateTimes(latitude: Double, longitude: Double) {
-        val method = repository.getSavedMethod()
-        val result = repository.getPrayerTimes(latitude, longitude, method)
-
-        result.fold(
-            onSuccess = { dailyTimes ->
-                startCountdownTicker(dailyTimes)
-            },
-            onFailure = { e ->
-                Log.e(TAG, "Failed to fetch prayer times", e)
-                if (_uiState.value is PrayerUiState.Loading) {
+            result.fold(
+                onSuccess = { dailyTimes ->
+                    startCountdownTicker(dailyTimes, settings)
+                },
+                onFailure = { e ->
+                    Log.e(TAG, "Failed to fetch prayer times", e)
                     _uiState.value = PrayerUiState.Error(
                         e.localizedMessage ?: "Failed to load prayer times"
                     )
                 }
-            }
-        )
+            )
+        }
     }
 
-    private fun startCountdownTicker(dailyTimes: DailyPrayerTimes) {
+    private fun startCountdownTicker(dailyTimes: DailyPrayerTimes, settings: ApiSettings) {
         countdownJob?.cancel()
         countdownJob = viewModelScope.launch {
             while (true) {
-                updateState(dailyTimes)
-                // Update every second when < 60 s remain, otherwise every minute
-                val prayers = dailyTimes.asList()
-                val nextInfo = TimeUtils.getNextPrayerInfo(prayers.map { it.timeInMillis })
+                updateState(dailyTimes, settings)
+                val nextInfo = TimeUtils.getNextPrayerInfo(dailyTimes.asList().map { it.timeInMillis })
                 val remainingMs = nextInfo?.second ?: Long.MAX_VALUE
                 delay(if (remainingMs < 60_000L) 1_000L else 30_000L)
             }
         }
     }
 
-    private fun updateState(dailyTimes: DailyPrayerTimes) {
+    private fun updateState(dailyTimes: DailyPrayerTimes, settings: ApiSettings) {
         val prayers = dailyTimes.asList()
-        val timeMillis = prayers.map { it.timeInMillis }
-        val nextInfo = TimeUtils.getNextPrayerInfo(timeMillis)
+        val nextInfo = TimeUtils.getNextPrayerInfo(prayers.map { it.timeInMillis })
 
         val (nextPrayer, nextPrayerIndex, countdown) = if (nextInfo != null) {
-            Triple(
-                prayers[nextInfo.first],
-                nextInfo.first,
-                TimeUtils.formatCountdown(nextInfo.second)
-            )
+            Triple(prayers[nextInfo.first], nextInfo.first, TimeUtils.formatCountdown(nextInfo.second))
         } else {
-            // All prayers have passed – show Fajr of tomorrow
             Triple(prayers[0], 0, "Tomorrow")
         }
 
@@ -142,14 +102,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             nextPrayer = nextPrayer,
             nextPrayerIndex = nextPrayerIndex,
             countdown = countdown,
-            currentTime = TimeUtils.getCurrentTimeString()
+            currentTime = TimeUtils.getCurrentTimeString(),
+            settings = settings
         )
-    }
-
-    fun setLocationPermissionDenied() {
-        if (_uiState.value is PrayerUiState.Loading) {
-            _uiState.value = PrayerUiState.LocationPermissionRequired
-        }
     }
 
     private fun scheduleBackgroundWork() {

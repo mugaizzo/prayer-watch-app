@@ -95,6 +95,7 @@ fun WatchFaceScreen(
 fun AllPrayerTimesScreen(
     dailyPrayerTimes: DailyPrayerTimes,
     nextPrayerIndex: Int,
+    cityLabel: String = "",
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -110,6 +111,13 @@ fun AllPrayerTimesScreen(
             style = PrayerWatchTypography.nextPrayerLabel,
             textAlign = TextAlign.Center
         )
+        if (cityLabel.isNotBlank()) {
+            Text(
+                text = cityLabel,
+                style = PrayerWatchTypography.nextPrayerLabel,
+                textAlign = TextAlign.Center
+            )
+        }
 
         dailyPrayerTimes.asList().forEachIndexed { index, prayer ->
             PrayerTimeRow(
@@ -211,10 +219,10 @@ fun ErrorScreen(
 }
 
 /**
- * Location permission required screen.
+ * Not-configured screen – shown when no city/settings have been synced from the phone app yet.
  */
 @Composable
-fun LocationPermissionScreen(modifier: Modifier = Modifier) {
+fun NotConfiguredScreen(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -227,11 +235,11 @@ fun LocationPermissionScreen(modifier: Modifier = Modifier) {
             modifier = Modifier.padding(16.dp)
         ) {
             Text(
-                text = "📍",
+                text = "📱",
                 style = PrayerWatchTypography.nextPrayerName
             )
             Text(
-                text = "Location access needed for prayer times",
+                text = "Open Prayer Watch on your phone to configure",
                 style = PrayerWatchTypography.nextPrayerLabel,
                 textAlign = TextAlign.Center
             )

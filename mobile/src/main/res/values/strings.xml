@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">Prayer Watch</string>
+    <string name="settings_title">Prayer Watch Settings</string>
+    <string name="city_label">City</string>
+    <string name="country_label">Country Code</string>
+    <string name="method_label">Calculation Method</string>
+    <string name="method_settings_label">Custom Angles (optional)</string>
+    <string name="school_label">Juristic School</string>
+    <string name="save_sync">Save &amp; Sync to Watch</string>
+    <string name="last_sync">Last sync: %s</string>
+    <string name="never">Never</string>
+    <string name="syncing">Syncing…</string>
+</resources>
